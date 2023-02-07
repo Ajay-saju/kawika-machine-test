@@ -1,12 +1,18 @@
+import 'dart:io';
+import 'package:al_downloader/al_downloader.dart';
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/src/widgets/container.dart';
-import 'package:flutter/src/widgets/framework.dart';
 import 'package:get/get.dart';
-import 'package:get/get_core/src/get_main.dart';
 import 'package:kawika/controller/home_screen_controller.dart';
+import 'package:kawika/screens/image_screen.dart';
+import 'package:kawika/screens/offline_download.dart';
+import 'package:kawika/screens/play_screen.dart';
 import 'package:kawika/screens/profile_screen.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:sqflite/sqflite.dart';
+import 'package:sqflite/sqlite_api.dart';
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends StatefulWidget with WidgetsBindingObserver {
   const HomeScreen({super.key});
 
   @override
@@ -32,6 +38,11 @@ class _HomeScreenState extends State<HomeScreen> {
         appBar: AppBar(
           title: customSearchBar,
         ),
+        floatingActionButton: ElevatedButton(
+            child: const Text('Next'),
+            onPressed: () {
+              Get.to(OfflineDownloads());
+            }),
         body: homeController.getUserDetails.value.data == null
             ? const Center(
                 child: CircularProgressIndicator(color: Colors.black87),
@@ -43,6 +54,35 @@ class _HomeScreenState extends State<HomeScreen> {
                     const SizedBox(
                       height: 20,
                     ),
+                    ElevatedButton(
+                        child: const Text('Download video'),
+                        onPressed: () async {
+                          await downloadVideo();
+                          //  ALDownloader.download(
+                          //     'http://techslides.com/demos/sample-videos/small.mp4',
+                          //     downloaderHandlerInterface:
+                          //         ALDownloaderHandlerInterface(
+                          //             progressHandler: (progress) {
+                          //       debugPrint(
+                          //           "ALDownloader | download progress = $progress, url = $url\n");
+                          //     }, succeededHandler: () {
+                          //       debugPrint(
+                          //           "ALDownloader | download succeeded, url = $url\n");
+                          //     }, failedHandler: () {
+                          //       debugPrint(
+                          //           "ALDownloader | download failed, url = $url\n");
+                          //     }, pausedHandler: () {
+                          //       debugPrint(
+                          //           "ALDownloader | download paused, url = $url\n");
+                          //     }));
+                        }),
+                    ElevatedButton(
+                        onPressed: () {}, child: const Text('Play video')),
+                    ElevatedButton(
+                        onPressed: () {
+                          Get.to(const ImageScreen());
+                        },
+                        child: const Text('select multiple images')),
                     SearchBar(),
                     Padding(
                       padding: const EdgeInsets.all(8.0),
@@ -95,6 +135,122 @@ class _HomeScreenState extends State<HomeScreen> {
               )),
       );
     });
+  }
+
+//   downloadVideo() async {
+//     Directory tempDir = await getTemporaryDirectory();
+// String tempPath = tempDir.path;
+//     final taskId = await FlutterDownloader.enqueue(
+//         url: 'http://techslides.com/demos/sample-videos/small.mp4 ',
+//         savedDir: "$tempPath/video.mp4",
+//         showNotification: true,
+//         openFileFromNotification: true);
+//   }
+  var taskid;
+  var url = 'http://techslides.com/demos/sample-videos/small.mp4';
+//   Future<void> downloadVideo(
+//       {required String url, required String name}) async {
+//     final dir = await getApplicationDocumentsDirectory();
+// //From path_provider package
+//     var localPath = dir.path + name;
+//     final savedDir = Directory(localPath);
+//     await savedDir.create(recursive: true).then((value) async {
+
+//         taskid = await FlutterDownloader.enqueue(
+//           url: url,
+//           fileName: name,
+//           savedDir: localPath,
+//           showNotification: true,
+//           openFileFromNotification: false,
+//           saveInPublicStorage: true,
+//         );
+//         print("----------------------$taskid");
+
+//     });
+//   }
+
+  // void download() {
+  //   downloadVideo(name: 'sample.mp4', url: url).then((_) {
+  //     saveTaskId(taskid, url);
+  //   });
+  // }
+
+  // Future<void> downloadVideo(
+  //     {required String url, required String name}) async {
+  //   final dir = await getApplicationDocumentsDirectory();
+  //   var localPath = dir.path + name;
+  //   final savedDir = Directory(localPath);
+  //   print(savedDir.path);
+  //   taskid = await FlutterDownloader.enqueue(
+  //     url: url,
+  //     savedDir: savedDir.path,
+  //     showNotification: true,
+  //     openFileFromNotification: true,
+  //   );
+  // }
+  CancelToken cancelToken = CancelToken();
+  cancelDownload(index) {
+    cancelToken.cancel();
+  }
+
+// var path;
+  bool? downloading;
+  String? progressString;
+  Future downloadVideo() async {
+    // cmeProgramController.allCmeVideos.value!.videoList![index].isDownloading =
+    //     true;
+
+    var url = 'http://techslides.com/demos/sample-videos/small.mp4';
+
+    Dio dio = Dio();
+    try {
+      var dir = await getApplicationDocumentsDirectory();
+      print("path ${dir.path}");
+      var path = "${dir.path}/$url";
+      await dio.download(
+        url,
+        path,
+        cancelToken: cancelToken,
+        onReceiveProgress: (rec, total) {
+          print("Rec: $rec , Total: $total");
+          setState(() {
+            downloading = true;
+            progressString = ((rec / total) * 100).toStringAsFixed(0) + "%";
+          });
+          if (rec == 383631) {
+            Get.to(VideoPlayerPage(
+              file: File(path),
+            )
+            );
+          }
+        },
+      );
+    } catch (e) {
+      // cmeProgramController.allCmeVideos.value!.videoList![index].isDownloading =
+      //     false;
+      print(e);
+    }
+    setState(() {
+      downloading = false;
+      progressString = "Completed";
+      // cmeProgramController.allCmeVideos.value!.videoList![index].isDownloading =
+      //     false;
+    });
+
+    print("Download completed");
+  }
+
+  void saveTaskId(String taskId, String url) async {
+    final Database db = await openDatabase('downloads.db');
+    await db.execute(
+      'CREATE TABLE IF NOT EXISTS downloads (task_id TEXT PRIMARY KEY, url TEXT)',
+    );
+    await db.insert(
+      'downloads',
+      {'task_id': taskId, 'url': url},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+    await db.close();
   }
 }
 
